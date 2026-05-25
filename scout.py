@@ -1,6 +1,8 @@
 import os
 import smtplib
+from datetime import date
 from email.mime.text import MIMEText
+from html import escape
 from typing import List, Optional
 from pydantic import BaseModel, Field
 from google import genai
@@ -33,9 +35,41 @@ class JobScoutReport(BaseModel):
     recruiter_notes: RecruiterNotes = Field(description="Notas e insights do dia elaborados pelo recrutador")
 
 
+def _safe_url(url: str) -> str:
+    if isinstance(url, str) and url.startswith(("https://", "http://")):
+        return escape(url, quote=True)
+    return "#"
+
+
+def _send_email(html_content: str) -> None:
+    smtp_user = os.environ.get("SMTP_USER")
+    smtp_password = os.environ.get("SMTP_PASSWORD")
+    recipient = os.environ.get("RECIPIENT_EMAIL")
+
+    missing = [k for k, v in {"SMTP_USER": smtp_user, "SMTP_PASSWORD": smtp_password, "RECIPIENT_EMAIL": recipient}.items() if not v]
+    if missing:
+        raise EnvironmentError(f"Missing required environment variables: {', '.join(missing)}")
+
+    msg = MIMEText(html_content, "html", "utf-8")
+    msg["Subject"] = f"Tracker Diário de Oportunidades - {date.today()}"
+    msg["From"] = smtp_user
+    msg["To"] = recipient
+
+    smtp_host = os.environ.get("SMTP_HOST", "smtp.gmail.com")
+    smtp_port = int(os.environ.get("SMTP_PORT", "587"))
+
+    with smtplib.SMTP(smtp_host, smtp_port) as server:
+        server.starttls()
+        server.login(smtp_user, smtp_password)
+        server.send_message(msg)
+
+
 def run_daily_job_scout():
-    # Initialize the modern Google GenAI Client
-    client = genai.Client(api_key=os.environ["GEMINI_API_KEY"])
+    api_key = os.environ.get("GEMINI_API_KEY")
+    if not api_key:
+        raise EnvironmentError("GEMINI_API_KEY environment variable is not set")
+
+    client = genai.Client(api_key=api_key)
     
     system_instruction = """
     Você é um headhunter sênior e especialista em transição de carreira jurídica e preparação para o serviço público no Nordeste do Brasil.
@@ -48,20 +82,24 @@ def run_daily_job_scout():
 
     print("Executing Google Search Grounding & Gemini Generation...")
     
-    # Execute call enforcing the JSON output structure
-    response = client.models.generate_content(
-        model='gemini-2.5-flash',
-        contents="Execute a busca diária consolidada por vagas corporativas e concursos públicos para o perfil estabelecido nas regiões AL, PE e CE.",
-        config=types.GenerateContentConfig(
-            system_instruction=system_instruction,
-            tools=[{"google_search": {}}],  # Activates Live Web Browser
-            temperature=0.1,                # Lower temperature for predictable extraction
-            response_mime_type="application/json",
-            response_schema=JobScoutReport, # Direct integration forcing Pydantic validation
-        ),
-    )
-    
-    # The output is GUARANTEED to be stringified JSON that maps perfectly to your schema
+    try:
+        response = client.models.generate_content(
+            model='gemini-2.5-flash',
+            contents="Execute a busca diária consolidada por vagas corporativas e concursos públicos para o perfil estabelecido nas regiões AL, PE e CE.",
+            config=types.GenerateContentConfig(
+                system_instruction=system_instruction,
+                tools=[{"google_search": {}}],  # Activates Live Web Browser
+                temperature=0.1,                # Lower temperature for predictable extraction
+                response_mime_type="application/json",
+                response_schema=JobScoutReport,
+            ),
+        )
+    except Exception as e:
+        raise RuntimeError(f"Gemini API call failed: {e}") from e
+
+    if response.text is None:
+        raise RuntimeError("Gemini returned an empty response (possibly blocked or quota exceeded)")
+
     raw_json_string = response.text
     print("Success! JSON payload received from Gemini.")
     
@@ -71,7 +109,10 @@ def run_daily_job_scout():
 
 def process_and_email_report(json_data: str):
     import json
-    data = json.loads(json_data)
+    try:
+        data = json.loads(json_data)
+    except json.JSONDecodeError as e:
+        raise ValueError(f"Failed to parse Gemini response as JSON: {e}") from e
     
     # Programmatically build a clean, bulletproof HTML email template
     html_content = f"""
@@ -93,12 +134,12 @@ def process_and_email_report(json_data: str):
     for job in data.get("corporate_jobs", []):
         html_content += f"""
             <tr>
-                <td><b>{job['title']}</b></td>
-                <td>{job['company']}</td>
-                <td>{job['location']}</td>
-                <td>{job['work_model']}</td>
-                <td><a href="{job['source_url']}" style="color: #1a73e8;">Acessar Vaga</a></td>
-                <td style="font-size: 13px; color: #5f6368;">{job['match_reason']}</td>
+                <td><b>{escape(job['title'])}</b></td>
+                <td>{escape(job['company'])}</td>
+                <td>{escape(job['location'])}</td>
+                <td>{escape(job['work_model'])}</td>
+                <td><a href="{_safe_url(job['source_url'])}" style="color: #1a73e8;">Acessar Vaga</a></td>
+                <td style="font-size: 13px; color: #5f6368;">{escape(job['match_reason'])}</td>
             </tr>
         """
         
@@ -115,21 +156,21 @@ def process_and_email_report(json_data: str):
     for exam in data.get("public_exams", []):
         html_content += f"""
             <tr>
-                <td><b>{exam['institution']}</b></td>
-                <td>{exam['role_and_sphere']}</td>
-                <td align="center">{exam['state']}</td>
-                <td><span style="padding: 2px 6px; background-color: #e8f0fe; color: #1a73e8; border-radius: 4px; font-size: 12px;">{exam['status']}</span></td>
-                <td>{exam['salary']}</td>
-                <td>{exam['deadline_or_url']}</td>
+                <td><b>{escape(exam['institution'])}</b></td>
+                <td>{escape(exam['role_and_sphere'])}</td>
+                <td align="center">{escape(exam['state'])}</td>
+                <td><span style="padding: 2px 6px; background-color: #e8f0fe; color: #1a73e8; border-radius: 4px; font-size: 12px;">{escape(exam['status'])}</span></td>
+                <td>{escape(exam['salary'])}</td>
+                <td>{escape(exam['deadline_or_url'])}</td>
             </tr>
         """
         
     html_content += f"""
         </table>
-        
+
         <h3 style="color: #e37400; margin-top: 24px;">Análise Estratégica do Recrutador</h3>
         <p style="background-color: #fef7e0; border-left: 4px solid #f4b400; padding: 12px; font-style: italic; margin-bottom: 30px;">
-            "{data.get('recruiter_notes', {{}}).get('regional_analysis', '')}"
+            "{escape(data.get('recruiter_notes', {{}}).get('regional_analysis', ''))}"
         </p>
         
         <p style="font-size: 11px; color: #9aa0a6; text-align: center; border-top: 1px solid #dadce0; padding-top: 10px;">
@@ -139,8 +180,8 @@ def process_and_email_report(json_data: str):
     </html>
     """
     
-    # Code to pipe 'html_content' directly into standard smtplib follows here...
-    print("HTML successfully generated. Size:", len(html_content), "bytes.")
+    _send_email(html_content)
+    print("Email sent successfully.")
 
 if __name__ == "__main__":
     # Test execution harness locally
