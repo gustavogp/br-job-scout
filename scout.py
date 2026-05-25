@@ -1,4 +1,6 @@
+import json
 import os
+import re
 import smtplib
 from datetime import date
 from email.mime.text import MIMEText
@@ -71,17 +73,22 @@ def run_daily_job_scout():
 
     client = genai.Client(api_key=api_key)
     
-    system_instruction = """
+    schema = json.dumps(JobScoutReport.model_json_schema(), ensure_ascii=False, indent=2)
+
+    system_instruction = f"""
     Você é um headhunter sênior e especialista em transição de carreira jurídica e preparação para o serviço público no Nordeste do Brasil.
     A candidata possui OAB ativa, reside em Maceió/AL, e busca recolocação nas regiões de ALAGOAS, PERNAMBUCO e CEARÁ (com total mobilidade para residir em Recife/PE ou Fortaleza/CE, ou atuar de forma 100% Remota).
 
     Seu objetivo diário é realizar duas pesquisas distintas usando ferramentas de busca viva:
     1. MERCADO CORPORATIVO: Vagas de transição (Compliance, Legal Operations, Analista de Contratos, Governança Corporativa, Proteção de Dados/LGPD) focadas em AL, PE, CE ou 100% Remotas.
     2. CONCURSOS PÚBLICOS: Editais abertos, publicados ou previstos/autorizados (AJAJ de Tribunais, Procuradorias, Defensorias, cargos superiores administrativos) focados em AL, PE, CE ou Esfera Federal.
+
+    Retorne APENAS um objeto JSON válido, sem markdown e sem blocos de código, seguindo exatamente este schema:
+    {schema}
     """
 
     print("Executing Google Search Grounding & Gemini Generation...")
-    
+
     try:
         response = client.models.generate_content(
             model='gemini-2.5-flash',
@@ -89,9 +96,7 @@ def run_daily_job_scout():
             config=types.GenerateContentConfig(
                 system_instruction=system_instruction,
                 tools=[{"google_search": {}}],  # Activates Live Web Browser
-                temperature=0.1,                # Lower temperature for predictable extraction
-                response_mime_type="application/json",
-                response_schema=JobScoutReport,
+                temperature=0.1,
             ),
         )
     except Exception as e:
@@ -100,7 +105,11 @@ def run_daily_job_scout():
     if response.text is None:
         raise RuntimeError("Gemini returned an empty response (possibly blocked or quota exceeded)")
 
-    raw_json_string = response.text
+    # Strip markdown code fences the model may add despite instructions
+    raw_text = response.text.strip()
+    raw_json_string = re.sub(r'^```(?:json)?\s*', '', raw_text)
+    raw_json_string = re.sub(r'\s*```$', '', raw_json_string)
+
     print("Success! JSON payload received from Gemini.")
     
     # Process and build HTML template for delivery
@@ -108,11 +117,11 @@ def run_daily_job_scout():
 
 
 def process_and_email_report(json_data: str):
-    import json
     try:
-        data = json.loads(json_data)
-    except json.JSONDecodeError as e:
-        raise ValueError(f"Failed to parse Gemini response as JSON: {e}") from e
+        report = JobScoutReport.model_validate_json(json_data)
+    except (json.JSONDecodeError, ValueError) as e:
+        raise ValueError(f"Failed to parse/validate Gemini response: {e}") from e
+    data = report.model_dump()
     
     # Programmatically build a clean, bulletproof HTML email template
     html_content = f"""
