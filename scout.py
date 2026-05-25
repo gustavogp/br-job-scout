@@ -179,7 +179,7 @@ def process_and_email_report(json_data: str):
 
         <h3 style="color: #e37400; margin-top: 24px;">Análise Estratégica do Recrutador</h3>
         <p style="background-color: #fef7e0; border-left: 4px solid #f4b400; padding: 12px; font-style: italic; margin-bottom: 30px;">
-            "{escape(data.get('recruiter_notes', {{}}).get('regional_analysis', ''))}"
+            "{escape(data['recruiter_notes']['regional_analysis'])}"
         </p>
         
         <p style="font-size: 11px; color: #9aa0a6; text-align: center; border-top: 1px solid #dadce0; padding-top: 10px;">
