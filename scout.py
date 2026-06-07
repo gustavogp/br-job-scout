@@ -83,6 +83,8 @@ def run_daily_job_scout():
     1. MERCADO CORPORATIVO: Vagas de transição (Compliance, Legal Operations, Analista de Contratos, Governança Corporativa, Proteção de Dados/LGPD) focadas em AL, PE, CE ou 100% Remotas.
     2. CONCURSOS PÚBLICOS: Editais abertos, publicados ou previstos/autorizados (AJAJ de Tribunais, Procuradorias, Defensorias, cargos superiores administrativos) focados em AL, PE, CE ou Esfera Federal.
 
+    Retorne no máximo 8 vagas corporativas e 8 concursos públicos. Priorize qualidade sobre quantidade.
+
     Retorne APENAS um objeto JSON válido, sem markdown e sem blocos de código, seguindo exatamente este schema:
     {schema}
     """
@@ -97,6 +99,7 @@ def run_daily_job_scout():
                 system_instruction=system_instruction,
                 tools=[{"google_search": {}}],  # Activates Live Web Browser
                 temperature=0.1,
+                max_output_tokens=65536,
             ),
         )
     except Exception as e:
@@ -110,8 +113,8 @@ def run_daily_job_scout():
     raw_json_string = re.sub(r'^```(?:json)?\s*', '', raw_text)
     raw_json_string = re.sub(r'\s*```$', '', raw_json_string)
 
-    print("Success! JSON payload received from Gemini.")
-    
+    print("JSON payload received from Gemini. Validating...")
+
     # Process and build HTML template for delivery
     process_and_email_report(raw_json_string)
 
@@ -120,7 +123,9 @@ def process_and_email_report(json_data: str):
     try:
         report = JobScoutReport.model_validate_json(json_data)
     except (json.JSONDecodeError, ValueError) as e:
+        print(f"Raw response (first 2000 chars): {json_data[:2000]}")
         raise ValueError(f"Failed to parse/validate Gemini response: {e}") from e
+    print("Validation successful.")
     data = report.model_dump()
     
     # Programmatically build a clean, bulletproof HTML email template
