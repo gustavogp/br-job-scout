@@ -22,13 +22,13 @@ class CorporateJob(BaseModel):
 class PublicExam(BaseModel):
     institution: str = Field(description="Nome do órgão público (ex: TJ-PE, PGM-Fortaleza)")
     role_and_sphere: str = Field(description="Cargo e esfera do concurso (ex: Analista Judiciário - Estadual)")
-    state: str = Field(description="Estado da federação correspondente: AL, PE, CE ou Federal")
+    state: str = Field(description="Estado da federação correspondente: AL, PE, CE, GO, DF ou Federal")
     status: str = Field(description="Status atual do certame: Inscrições Abertas, Edital Publicado ou Previsto/Autorizado")
     salary: str = Field(description="Remuneração ou salário inicial informado no edital")
     deadline_or_url: str = Field(description="Período final de inscrição ou link principal do concurso")
 
 class RecruiterNotes(BaseModel):
-    regional_analysis: str = Field(description="Análise estratégica do dia (2 a 3 linhas) sobre o mercado de AL, PE e CE")
+    regional_analysis: str = Field(description="Análise estratégica do dia (2 a 3 linhas) sobre o mercado de AL, PE, CE, GO e DF")
 
 # This is the master wrapper object Gemini MUST return
 class JobScoutReport(BaseModel):
@@ -77,11 +77,11 @@ def run_daily_job_scout():
 
     system_instruction = f"""
     Você é um headhunter sênior e especialista em transição de carreira jurídica e preparação para o serviço público no Nordeste do Brasil.
-    A candidata possui OAB ativa, reside em Maceió/AL, e busca recolocação nas regiões de ALAGOAS, PERNAMBUCO e CEARÁ (com total mobilidade para residir em Recife/PE ou Fortaleza/CE, ou atuar de forma 100% Remota).
+    A candidata possui OAB ativa, reside em Maceió/AL, e busca recolocação nas regiões de ALAGOAS, PERNAMBUCO, CEARÁ, GOIÁS e DISTRITO FEDERAL (com total mobilidade para residir em Recife/PE, Fortaleza/CE, Goiânia/GO ou Brasília/DF, ou atuar de forma 100% Remota).
 
     Seu objetivo diário é realizar duas pesquisas distintas usando ferramentas de busca viva:
-    1. MERCADO CORPORATIVO: Vagas de transição (Compliance, Legal Operations, Analista de Contratos, Governança Corporativa, Proteção de Dados/LGPD) focadas em AL, PE, CE ou 100% Remotas.
-    2. CONCURSOS PÚBLICOS: Editais abertos, publicados ou previstos/autorizados (AJAJ de Tribunais, Procuradorias, Defensorias, cargos superiores administrativos) focados em AL, PE, CE ou Esfera Federal.
+    1. MERCADO CORPORATIVO: Vagas de transição (Compliance, Legal Operations, Analista de Contratos, Governança Corporativa, Proteção de Dados/LGPD) focadas em AL, PE, CE, GO, DF ou 100% Remotas.
+    2. CONCURSOS PÚBLICOS: Editais abertos, publicados ou previstos/autorizados (AJAJ de Tribunais, Procuradorias, Defensorias, cargos superiores administrativos) focados em AL, PE, CE, GO, DF ou Esfera Federal.
 
     Retorne no máximo 8 vagas corporativas e 8 concursos públicos. Priorize qualidade sobre quantidade.
 
@@ -94,7 +94,7 @@ def run_daily_job_scout():
     try:
         response = client.models.generate_content(
             model='gemini-2.5-flash',
-            contents="Execute a busca diária consolidada por vagas corporativas e concursos públicos para o perfil estabelecido nas regiões AL, PE e CE.",
+            contents="Execute a busca diária consolidada por vagas corporativas e concursos públicos para o perfil estabelecido nas regiões AL, PE, CE, GO e DF.",
             config=types.GenerateContentConfig(
                 system_instruction=system_instruction,
                 tools=[{"google_search": {}}],  # Activates Live Web Browser
@@ -138,7 +138,7 @@ def process_and_email_report(json_data: str):
         
         <p>Olá! Aqui estão as oportunidades selecionadas automaticamente pelo seu assistente Gemini hoje:</p>
         
-        <h3 style="color: #202124;">1. Vagas no Mercado Corporativo (AL / PE / CE / Remoto)</h3>
+        <h3 style="color: #202124;">1. Vagas no Mercado Corporativo (AL / PE / CE / GO / DF / Remoto)</h3>
         <table border="1" cellpadding="8" cellspacing="0" style="border-collapse: collapse; width: 100%; border-color: #dadce0;">
             <tr style="background-color: #f8f9fa;">
                 <th>Cargo</th><th>Empresa</th><th>Localização</th><th>Modelo</th><th>Link</th><th>Por que se aplica?</th>
